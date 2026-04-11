@@ -20,6 +20,34 @@ class GitHubProvider(BaseGitProvider):
             'Accept': 'application/vnd.github.v3+json',
         }
     
+    @property
+    def capabilities(self) -> Dict[str, bool]:
+        """
+        Report which features this provider supports.
+        GitHub has full API support.
+        """
+        return {
+            'list_repositories': True,
+            'get_repository': True,
+            'get_file_content': True,
+            'get_directory_tree': True,
+            'list_pull_requests': True,
+            'get_pull_request': True,
+            'get_pull_request_diff': True,
+            'list_commits': True,
+            'create_commit': True,
+            'requires_authentication': True,
+            'supports_webhooks': True,
+            'supports_projects': False,  # GitHub uses orgs, not projects
+            'supports_organizations': True,  # Unique to GitHub
+            'supports_actions': True,  # Unique to GitHub
+        }
+    
+    @property
+    def provider_type(self) -> str:
+        """Return the provider type identifier."""
+        return 'github'
+    
     def _request(self, method: str, endpoint: str, **kwargs) -> requests.Response:
         """Make HTTP request to GitHub API."""
         url = f"{self.base_url}{endpoint}"

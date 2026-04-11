@@ -28,6 +28,33 @@ class BitbucketServerProvider(BaseGitProvider):
         # Cache for all repositories (to avoid re-fetching on pagination)
         self._all_repos_cache = None
     
+    @property
+    def capabilities(self) -> Dict[str, bool]:
+        """
+        Report which features this provider supports.
+        Bitbucket Server has full API support.
+        """
+        return {
+            'list_repositories': True,
+            'get_repository': True,
+            'get_file_content': True,
+            'get_directory_tree': True,
+            'list_pull_requests': True,
+            'get_pull_request': True,
+            'get_pull_request_diff': True,
+            'list_commits': True,
+            'create_commit': True,
+            'requires_authentication': True,
+            'supports_webhooks': True,
+            'supports_projects': True,  # Bitbucket has project hierarchy
+            'supports_custom_headers': True,  # Unique to Bitbucket Server
+        }
+    
+    @property
+    def provider_type(self) -> str:
+        """Return the provider type identifier."""
+        return 'bitbucket_server'
+    
     def _request(self, method: str, endpoint: str, **kwargs) -> requests.Response:
         """Make HTTP request to Bitbucket Server API."""
         url = f"{self.base_url}/rest/api/1.0{endpoint}"
@@ -162,7 +189,11 @@ class BitbucketServerProvider(BaseGitProvider):
             # Recursively get subdirectories if requested
             if recursive and child.get('type') == 'DIRECTORY':
                 subpath = f"{path}/{child.get('path', {}).get('name', '')}" if path else child.get('path', {}).get('name', '')
-                results.extend(self.get_directory_tree(repo_id, subpath, branch, recursive))
+                try:
+                    results.extend(self.get_directory_tree(repo_id, subpath, branch, recursive))
+                except Exception:
+                    # Skip directories that can't be accessed (permissions, symlinks, etc.)
+                    pass
         
         return results
     

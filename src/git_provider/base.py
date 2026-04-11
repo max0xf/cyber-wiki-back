@@ -25,6 +25,39 @@ class BaseGitProvider(ABC):
         self.token = token
         self.username = username
     
+    @property
+    def capabilities(self) -> Dict[str, bool]:
+        """
+        Report which features this provider supports.
+        
+        Returns:
+            Dict mapping feature names to support status (True/False)
+        """
+        return {
+            'list_repositories': True,
+            'get_repository': True,
+            'get_file_content': True,
+            'get_directory_tree': True,
+            'list_pull_requests': True,
+            'get_pull_request': True,
+            'get_pull_request_diff': True,
+            'list_commits': True,
+            'create_commit': True,
+            'requires_authentication': True,
+            'supports_webhooks': False,
+            'supports_projects': False,
+        }
+    
+    @property
+    def provider_type(self) -> str:
+        """
+        Return the provider type identifier.
+        
+        Returns:
+            Provider type string (e.g., 'github', 'bitbucket_server', 'local_git')
+        """
+        return 'unknown'
+    
     @abstractmethod
     def list_repositories(self, page: int = 1, per_page: int = 30) -> Dict[str, Any]:
         """

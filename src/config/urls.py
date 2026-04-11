@@ -8,7 +8,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, Sp
 urlpatterns = [
     path('admin/', admin.site.urls),
     
-    # API v1 endpoints (each module manages its own v1 prefix)
+    # API v1 endpoints
     path('api/auth/v1/', include('users.auth_urls')),
     path('api/user_management/v1/', include('users.urls')),
     path('api/wiki/v1/', include('wiki.urls')),

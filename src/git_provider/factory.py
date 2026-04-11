@@ -5,6 +5,7 @@ from typing import Optional
 from .base import BaseGitProvider
 from .providers.github import GitHubProvider
 from .providers.bitbucket_server import BitbucketServerProvider
+from .providers.local_git import LocalGitProvider
 from service_tokens.models import ServiceType
 
 
@@ -38,6 +39,9 @@ class GitProviderFactory:
             if not username:
                 raise ValueError("Username is required for Bitbucket Server")
             return BitbucketServerProvider(base_url=base_url, token=token, username=username, custom_header=custom_header, custom_header_token=custom_header_token)
+        elif provider == 'local_git':
+            # For local Git, base_url is the filesystem path
+            return LocalGitProvider(base_path=base_url, token=token, username=username)
         else:
             raise ValueError(f"Unsupported provider: {provider}")
     
