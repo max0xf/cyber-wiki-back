@@ -183,10 +183,7 @@ class GitProviderViewSet(viewsets.ViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Build repo_id in the format expected by providers
-            repo_id = f"{project_key}_{repo_slug}"
-            
-            file_data = provider.get_file_content(repo_id, file_path, branch)
+            file_data = provider.get_file_content(project_key, repo_slug, file_path, branch)
             
             # Decode base64 content if needed
             if file_data.get('encoding') == 'base64':
@@ -201,6 +198,36 @@ class GitProviderViewSet(viewsets.ViewSet):
             return Response(
                 {'error': str(e), 'code': 'INVALID_REQUEST'},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            import requests
+            logger.exception(f"Error getting file content: {str(e)}")
+            
+            # Check if it's an authentication error
+            if isinstance(e, requests.exceptions.HTTPError):
+                if e.response.status_code == 401:
+                    return Response(
+                        {
+                            'error': 'Authentication failed',
+                            'code': 'AUTHENTICATION_FAILED',
+                            'detail': 'Invalid credentials. Please check your tokens in the Configuration page and ensure they are valid and not expired.',
+                            'help': 'Verify: 1) Git provider token is valid, 2) Username is correct, 3) Custom header token (if required) is valid and not expired'
+                        },
+                        status=status.HTTP_401_UNAUTHORIZED
+                    )
+                elif e.response.status_code == 403:
+                    return Response(
+                        {
+                            'error': 'Access forbidden',
+                            'code': 'FORBIDDEN',
+                            'detail': 'You do not have permission to access this resource. Check your token permissions.',
+                        },
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            return Response(
+                {'error': 'Internal server error', 'code': 'INTERNAL_ERROR', 'detail': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
     @extend_schema(
@@ -236,16 +263,117 @@ class GitProviderViewSet(viewsets.ViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Build repo_id in the format expected by providers
-            repo_id = f"{project_key}_{repo_slug}"
-            
-            tree = provider.get_directory_tree(repo_id, path, branch, recursive)
+            tree = provider.get_directory_tree(project_key, repo_slug, path, branch, recursive)
             return Response(tree)
         except ValueError as e:
             return Response(
                 {'error': str(e), 'code': 'INVALID_REQUEST'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        except Exception as e:
+            import requests
+            logger.exception(f"Error getting directory tree: {str(e)}")
+            
+            # Check if it's an authentication error
+            if isinstance(e, requests.exceptions.HTTPError):
+                if e.response.status_code == 401:
+                    return Response(
+                        {
+                            'error': 'Authentication failed',
+                            'code': 'AUTHENTICATION_FAILED',
+                            'detail': 'Invalid credentials. Please check your tokens in the Configuration page and ensure they are valid and not expired.',
+                            'help': 'Verify: 1) Git provider token is valid, 2) Username is correct, 3) Custom header token (if required) is valid and not expired'
+                        },
+                        status=status.HTTP_401_UNAUTHORIZED
+                    )
+                elif e.response.status_code == 403:
+                    return Response(
+                        {
+                            'error': 'Access forbidden',
+                            'code': 'FORBIDDEN',
+                            'detail': 'You do not have permission to access this resource. Check your token permissions.',
+                        },
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            
+            return Response(
+                {'error': 'Internal server error', 'code': 'INTERNAL_ERROR', 'detail': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+@extend_schema(
+    operation_id='git_provider_repository_get',
+    summary='Get repository details',
+    description='Get details of a specific repository.',
+    parameters=[
+        OpenApiParameter(name='provider', type=str, required=True),
+        OpenApiParameter(name='base_url', type=str, required=True),
+        OpenApiParameter(name='repo_id', type=str, required=True, location=OpenApiParameter.PATH),
+    ],
+    responses={200: RepositorySerializer},
+    tags=['git-provider'],
+)
+@action(detail=True, methods=['get'], url_path='')
+def get_repository(self, request, pk=None):
+    """Get repository details."""
+    try:
+        provider = self._get_provider(request)
+        repo = provider.get_repository(pk)
+        return Response(repo)
+    except ValueError as e:
+        return Response(
+            {'error': str(e), 'code': 'INVALID_REQUEST'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+@extend_schema(
+    operation_id='git_provider_file_get',
+    summary='Get file content',
+    description='Get content of a specific file.',
+    parameters=[
+        OpenApiParameter(name='provider', type=str, required=True),
+        OpenApiParameter(name='base_url', type=str, required=True),
+        OpenApiParameter(name='project_key', type=str, required=True, description='Project key (for Bitbucket Server) or owner (for GitHub)'),
+        OpenApiParameter(name='repo_slug', type=str, required=True, description='Repository slug/name'),
+        OpenApiParameter(name='file_path', type=str, required=True, description='Path to the file'),
+        OpenApiParameter(name='branch', type=str, required=False),
+    ],
+    responses={200: FileContentSerializer},
+    tags=['git-provider'],
+)
+@action(detail=False, methods=['get'], url_path='file')
+def get_file(self, request):
+    """Get file content."""
+    try:
+        provider = self._get_provider(request)
+        project_key = request.query_params.get('project_key')
+        repo_slug = request.query_params.get('repo_slug')
+        file_path = request.query_params.get('file_path')
+        branch = request.query_params.get('branch', 'main')
+        
+        if not project_key or not repo_slug or not file_path:
+            return Response(
+                {'error': 'project_key, repo_slug, and file_path are required', 'code': 'MISSING_PARAMETERS'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        file_data = provider.get_file_content(project_key, repo_slug, file_path, branch)
+        
+        # Decode base64 content if needed
+        if file_data.get('encoding') == 'base64':
+            try:
+                file_data['content'] = base64.b64decode(file_data['content']).decode('utf-8')
+                file_data['encoding'] = 'utf-8'
+            except Exception:
+                pass  # Keep as base64 if decode fails
+        
+        return Response(file_data)
+    except ValueError as e:
+        return Response(
+            {'error': str(e), 'code': 'INVALID_REQUEST'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     
     @extend_schema(
         operation_id='git_provider_pull_requests_list',

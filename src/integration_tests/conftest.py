@@ -108,25 +108,83 @@ def session(base_url):
 
 
 @pytest.fixture
-def git_provider_config():
+def git_provider_config(api_session):
     """
     Git provider configuration for testing.
-    Should be set via environment variables.
+    First checks if service tokens are configured via API,
+    falls back to environment variables if not.
     """
+    import requests
+    
+    # Try to get configured service tokens from API
+    try:
+        response = requests.get(
+            f"{api_session.base_url}/api/service-tokens/v1/tokens",
+            headers=api_session.headers
+        )
+        
+        if response.status_code == 200:
+            tokens = response.json()
+            
+            # Find git provider tokens
+            git_token = None
+            custom_header_token = None
+            
+            for token in tokens:
+                if token['service_type'] in ['bitbucket_server', 'github']:
+                    git_token = token
+                elif token['service_type'] == 'custom_header':
+                    custom_header_token = token
+            
+            if git_token:
+                print(f"\n✓ Found configured {git_token['service_type']} service token")
+                print(f"   Base URL: {git_token.get('base_url', 'N/A')}")
+                
+                if custom_header_token:
+                    print(f"✓ Found custom header token: {custom_header_token.get('header_name', 'N/A')}")
+                else:
+                    print(f"⚠️  No custom header token configured (may be required for some Git servers)")
+                
+                return {
+                    "provider": git_token['service_type'],
+                    "base_url": git_token.get('base_url', ''),
+                    "configured_via_api": True,
+                    "has_custom_header": custom_header_token is not None,
+                }
+    except Exception as e:
+        print(f"\n⚠️  Could not fetch service tokens: {e}")
+    
+    # Fall back to environment variables
     return {
         "provider": os.environ.get("TEST_GIT_PROVIDER", "bitbucket_server"),
         "base_url": os.environ.get("TEST_GIT_BASE_URL"),
-        "username": os.environ.get("TEST_GIT_USERNAME"),
-        "token": os.environ.get("TEST_GIT_TOKEN"),
+        "configured_via_api": False,
+        "has_custom_header": False,
     }
 
 
 @pytest.fixture
 def skip_if_no_git_config(git_provider_config):
     """Skip test if git provider is not configured."""
-    if not all([
-        git_provider_config["base_url"],
-        git_provider_config["username"],
-        git_provider_config["token"]
-    ]):
-        pytest.skip("Git provider not configured. Set TEST_GIT_* environment variables.")
+    if git_provider_config.get("configured_via_api"):
+        # Service token is configured via API, tests can run
+        return
+    
+    # Check environment variables
+    if not git_provider_config.get("base_url"):
+        pytest.skip("Git provider not configured. Configure service token via web UI or set TEST_GIT_* environment variables.")
+
+
+@pytest.fixture
+def test_repository_config():
+    """
+    Test repository configuration.
+    Can be set via environment variables for specific repository testing.
+    """
+    return {
+        "project_key": os.environ.get("TEST_REPO_PROJECT_KEY", "REAL"),
+        "repo_slug": os.environ.get("TEST_REPO_SLUG", "cyber-repo"),
+        "branch": os.environ.get("TEST_REPO_BRANCH", "master"),
+        "test_file_path": os.environ.get("TEST_FILE_PATH", "README.md"),
+        "test_dir_path": os.environ.get("TEST_DIR_PATH", "docs"),
+    }

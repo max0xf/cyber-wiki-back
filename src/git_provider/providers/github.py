@@ -77,8 +77,9 @@ class GitHubProvider(BaseGitProvider):
         response = self._request('GET', f'/repos/{repo_id}')
         return self._normalize_repo(response.json())
     
-    def get_file_content(self, repo_id: str, file_path: str, branch: str = 'main') -> Dict[str, Any]:
+    def get_file_content(self, project_key: str, repo_slug: str, file_path: str, branch: str = 'main') -> Dict[str, Any]:
         """Get file content from repository."""
+        repo_id = f"{project_key}/{repo_slug}"
         response = self._request('GET', f'/repos/{repo_id}/contents/{file_path}', params={'ref': branch})
         data = response.json()
         
@@ -90,8 +91,9 @@ class GitHubProvider(BaseGitProvider):
             'path': data.get('path', file_path),
         }
     
-    def get_directory_tree(self, repo_id: str, path: str = '', branch: str = 'main', recursive: bool = False) -> List[Dict[str, Any]]:
+    def get_directory_tree(self, project_key: str, repo_slug: str, path: str = '', branch: str = 'main', recursive: bool = False) -> List[Dict[str, Any]]:
         """Get directory tree."""
+        repo_id = f"{project_key}/{repo_slug}"
         if recursive:
             # Use Git Trees API for recursive listing
             response = self._request('GET', f'/repos/{repo_id}/git/trees/{branch}', params={'recursive': '1'})

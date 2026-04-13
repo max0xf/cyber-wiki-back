@@ -35,13 +35,16 @@ class TestGitProviderRepositories:
         print("Expected: HTTP 200 with repository list (or 400 if no service token)")
         
         provider = git_provider_config["provider"]
+        base_url = git_provider_config["base_url"]
         print(f"\n📤 Listing repositories for provider: {provider}")
+        print(f"   Base URL: {base_url}")
         print(f"   Parameters: page=1, per_page=10")
         
         response = requests.get(
-            f"{api_session.base_url}/api/git-provider/v1/repositories/repositories",
+            f"{api_session.base_url}/api/git-provider/v1/repositories",
             params={
                 "provider": provider,
+                "base_url": base_url,
                 "page": 1,
                 "per_page": 10
             },
@@ -66,6 +69,15 @@ class TestGitProviderRepositories:
             print(f"\n⚠️  No service token configured for {provider}")
             print(f"   This is expected if service tokens haven't been set up")
             pytest.skip(f"No service token configured for {provider}")
+        elif response.status_code == 401:
+            error_data = response.json()
+            print(f"\n⚠️  Authentication failed: {error_data.get('detail', 'Unknown error')}")
+            print(f"   Help: {error_data.get('help', 'Check your tokens')}")
+            pytest.skip(f"Authentication failed - tokens may be expired or invalid")
+        elif response.status_code == 403:
+            error_data = response.json()
+            print(f"\n⚠️  Access forbidden: {error_data.get('detail', 'Unknown error')}")
+            pytest.skip(f"Access forbidden - check token permissions")
         else:
             pytest.fail(f"Unexpected status code: {response.status_code}")
             
@@ -167,8 +179,8 @@ class TestGitProviderRepositories:
 class TestGitProviderContent:
     """Test git provider content endpoints. Tests skip if not configured."""
 
-    def test_get_file_content(self, api_session, git_provider_config, skip_if_no_git_config):
-        """Test getting file content from repository."""
+    def test_get_file_content(self, api_session, git_provider_config, test_repository_config, skip_if_no_git_config):
+        """Test getting file content from repository using new API."""
         print("\n" + "="*80)
         print("TEST: Get File Content")
         print("="*80)
@@ -176,15 +188,69 @@ class TestGitProviderContent:
         print("Expected: HTTP 200 with file content")
         
         provider = git_provider_config["provider"]
+        base_url = git_provider_config["base_url"]
+        project_key = test_repository_config["project_key"]
+        repo_slug = test_repository_config["repo_slug"]
+        branch = test_repository_config["branch"]
+        file_path = test_repository_config["test_file_path"]
         
-        print(f"\n⚠️  Test requires specific repository and file path")
-        print(f"   Skipping for now - implement when test repository is available")
-        pytest.skip("Requires test repository configuration")
+        print(f"\n📤 Getting file content...")
+        print(f"   Provider: {provider}")
+        print(f"   Base URL: {base_url}")
+        print(f"   Repository: {project_key}/{repo_slug}")
+        print(f"   Branch: {branch}")
+        print(f"   File: {file_path}")
         
+        response = requests.get(
+            f"{api_session.base_url}/api/git-provider/v1/file",
+            params={
+                "provider": provider,
+                "base_url": base_url,
+                "project_key": project_key,
+                "repo_slug": repo_slug,
+                "branch": branch,
+                "file_path": file_path
+            },
+            headers=api_session.headers
+        )
+        
+        print(f"📥 Response: HTTP {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print(f"\n🔍 Analyzing response...")
+            
+            if "content" in data:
+                content = data["content"]
+                content_preview = content[:100] if len(content) > 100 else content
+                print(f"   ✓ Content length: {len(content)} characters")
+                print(f"   ✓ Preview: {content_preview}...")
+            
+            print(f"\n✅ PASS: File content retrieved successfully")
+            
+        elif response.status_code == 400:
+            error_data = response.json()
+            print(f"\n⚠️  Bad request: {error_data.get('error', 'Unknown error')}")
+            pytest.skip(f"File not accessible")
+        elif response.status_code == 401:
+            error_data = response.json()
+            print(f"\n⚠️  Authentication failed: {error_data.get('detail', 'Unknown error')}")
+            print(f"   Help: {error_data.get('help', 'Check your tokens')}")
+            pytest.skip(f"Authentication failed - tokens may be expired or invalid")
+        elif response.status_code == 403:
+            error_data = response.json()
+            print(f"\n⚠️  Access forbidden: {error_data.get('detail', 'Unknown error')}")
+            pytest.skip(f"Access forbidden - check token permissions")
+        elif response.status_code == 404:
+            print(f"\n⚠️  File not found")
+            pytest.skip(f"File {file_path} not found in {project_key}/{repo_slug}")
+        else:
+            pytest.fail(f"Unexpected status code: {response.status_code}\nResponse: {response.text}")
+            
         print("="*80)
 
-    def test_list_directory_contents(self, api_session, git_provider_config, skip_if_no_git_config):
-        """Test listing directory contents."""
+    def test_list_directory_contents(self, api_session, git_provider_config, test_repository_config, skip_if_no_git_config):
+        """Test listing directory contents using new API."""
         print("\n" + "="*80)
         print("TEST: List Directory Contents")
         print("="*80)
@@ -192,9 +258,63 @@ class TestGitProviderContent:
         print("Expected: HTTP 200 with file/directory list")
         
         provider = git_provider_config["provider"]
+        base_url = git_provider_config["base_url"]
+        project_key = test_repository_config["project_key"]
+        repo_slug = test_repository_config["repo_slug"]
+        branch = test_repository_config["branch"]
+        path = test_repository_config["test_dir_path"]
         
-        print(f"\n⚠️  Test requires specific repository and path")
-        print(f"   Skipping for now - implement when test repository is available")
-        pytest.skip("Requires test repository configuration")
+        print(f"\n📤 Listing directory contents...")
+        print(f"   Provider: {provider}")
+        print(f"   Base URL: {base_url}")
+        print(f"   Repository: {project_key}/{repo_slug}")
+        print(f"   Branch: {branch}")
+        print(f"   Path: {path}")
         
+        response = requests.get(
+            f"{api_session.base_url}/api/git-provider/v1/tree",
+            params={
+                "provider": provider,
+                "base_url": base_url,
+                "project_key": project_key,
+                "repo_slug": repo_slug,
+                "branch": branch,
+                "path": path,
+                "recursive": "false"
+            },
+            headers=api_session.headers
+        )
+        
+        print(f"📥 Response: HTTP {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print(f"\n🔍 Analyzing response...")
+            
+            if isinstance(data, list):
+                print(f"   ✓ Found {len(data)} items")
+                if len(data) > 0:
+                    print(f"   ✓ First item: {data[0].get('path', 'N/A')}")
+            
+            print(f"\n✅ PASS: Directory contents listed successfully")
+            
+        elif response.status_code == 400:
+            error_data = response.json()
+            print(f"\n⚠️  Bad request: {error_data.get('error', 'Unknown error')}")
+            pytest.skip(f"Repository or path not accessible")
+        elif response.status_code == 401:
+            error_data = response.json()
+            print(f"\n⚠️  Authentication failed: {error_data.get('detail', 'Unknown error')}")
+            print(f"   Help: {error_data.get('help', 'Check your tokens')}")
+            pytest.skip(f"Authentication failed - tokens may be expired or invalid")
+        elif response.status_code == 403:
+            error_data = response.json()
+            print(f"\n⚠️  Access forbidden: {error_data.get('detail', 'Unknown error')}")
+            pytest.skip(f"Access forbidden - check token permissions")
+        elif response.status_code == 404:
+            print(f"\n⚠️  Repository or path not found")
+            pytest.skip(f"Repository {project_key}/{repo_slug} not found")
+        else:
+            pytest.fail(f"Unexpected status code: {response.status_code}\nResponse: {response.text}")
+            
         print("="*80)

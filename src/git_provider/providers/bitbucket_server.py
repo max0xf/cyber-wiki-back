@@ -145,10 +145,8 @@ class BitbucketServerProvider(BaseGitProvider):
         response = self._request('GET', f'/projects/{project_key}/repos/{repo_slug}')
         return self._normalize_repo(response.json())
     
-    def get_file_content(self, repo_id: str, file_path: str, branch: str = 'main') -> Dict[str, Any]:
+    def get_file_content(self, project_key: str, repo_slug: str, file_path: str, branch: str = 'main') -> Dict[str, Any]:
         """Get file content from repository."""
-        project_key, repo_slug = repo_id.split('_', 1)
-        
         # Get file content
         response = self._request('GET', f'/projects/{project_key}/repos/{repo_slug}/browse/{file_path}', params={
             'at': branch,
@@ -166,9 +164,8 @@ class BitbucketServerProvider(BaseGitProvider):
             'path': file_path,
         }
     
-    def get_directory_tree(self, repo_id: str, path: str = '', branch: str = 'main', recursive: bool = False) -> List[Dict[str, Any]]:
+    def get_directory_tree(self, project_key: str, repo_slug: str, path: str = '', branch: str = 'main', recursive: bool = False) -> List[Dict[str, Any]]:
         """Get directory tree."""
-        project_key, repo_slug = repo_id.split('_', 1)
         
         endpoint = f'/projects/{project_key}/repos/{repo_slug}/browse'
         if path:

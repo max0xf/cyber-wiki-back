@@ -273,10 +273,11 @@ class LocalGitProvider(BaseGitProvider):
             }
         }
     
-    def get_file_content(self, repo_id: str, file_path: str, branch: str = 'main') -> Dict[str, Any]:
+    def get_file_content(self, project_key: str, repo_slug: str, file_path: str, branch: str = 'main') -> Dict[str, Any]:
         """
         Get content of a specific file.
         """
+        repo_id = f"{project_key}_{repo_slug}"
         repo_path = self._get_repo_path(repo_id)
         
         # Use git show to get file content at specific branch
@@ -306,10 +307,11 @@ class LocalGitProvider(BaseGitProvider):
         except subprocess.CalledProcessError as e:
             raise ValueError(f"File not found: {file_path} in branch {branch}") from e
     
-    def get_directory_tree(self, repo_id: str, path: str = '', branch: str = 'main', recursive: bool = False) -> List[Dict[str, Any]]:
+    def get_directory_tree(self, project_key: str, repo_slug: str, path: str = '', branch: str = 'main', recursive: bool = False) -> List[Dict[str, Any]]:
         """
         Get directory tree/listing.
         """
+        repo_id = f"{project_key}_{repo_slug}"
         repo_path = self._get_repo_path(repo_id)
         
         # Use git ls-tree to list files

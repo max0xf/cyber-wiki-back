@@ -86,12 +86,13 @@ class BaseGitProvider(ABC):
         pass
     
     @abstractmethod
-    def get_file_content(self, repo_id: str, file_path: str, branch: str = 'main') -> Dict[str, Any]:
+    def get_file_content(self, project_key: str, repo_slug: str, file_path: str, branch: str = 'main') -> Dict[str, Any]:
         """
         Get content of a specific file.
         
         Args:
-            repo_id: Repository identifier
+            project_key: Project key (for Bitbucket) or owner (for GitHub)
+            repo_slug: Repository slug/name
             file_path: Path to the file within the repository
             branch: Branch name (default: 'main')
         
@@ -101,12 +102,13 @@ class BaseGitProvider(ABC):
         pass
     
     @abstractmethod
-    def get_directory_tree(self, repo_id: str, path: str = '', branch: str = 'main', recursive: bool = False) -> List[Dict[str, Any]]:
+    def get_directory_tree(self, project_key: str, repo_slug: str, path: str = '', branch: str = 'main', recursive: bool = False) -> List[Dict[str, Any]]:
         """
         Get directory tree/listing.
         
         Args:
-            repo_id: Repository identifier
+            project_key: Project key (for Bitbucket) or owner (for GitHub)
+            repo_slug: Repository slug/name
             path: Directory path (empty for root)
             branch: Branch name
             recursive: Whether to recursively list all files

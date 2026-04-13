@@ -57,6 +57,8 @@ class GitProviderFactory:
             BaseGitProvider instance
         """
         from service_tokens.models import ServiceToken
+        import logging
+        logger = logging.getLogger(__name__)
         
         custom_header = None
         custom_header_name = None
@@ -64,13 +66,17 @@ class GitProviderFactory:
         # For Bitbucket Server, also fetch custom header token if available
         if service_token.service_type == ServiceType.BITBUCKET_SERVER:
             try:
+                # Custom header tokens typically have empty base_url (they're global)
                 custom_token = ServiceToken.objects.get(
                     user=service_token.user,
-                    service_type=ServiceType.CUSTOM_HEADER
+                    service_type=ServiceType.CUSTOM_HEADER,
+                    base_url=''
                 )
                 custom_header = custom_token.get_token()
                 custom_header_name = custom_token.header_name
+                logger.info(f"Found custom header token: {custom_header_name} (length: {len(custom_header) if custom_header else 0})")
             except ServiceToken.DoesNotExist:
+                logger.warning(f"No custom header token found for user {service_token.user.username}")
                 pass  # Custom header token not configured, continue without it
         
         return GitProviderFactory.create(
