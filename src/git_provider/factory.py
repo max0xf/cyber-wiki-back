@@ -74,6 +74,8 @@ class GitProviderFactory:
                     service_type=ServiceType.CUSTOM_HEADER
                 )
                 logger.info(f"Found {all_custom_tokens.count()} custom header token(s)")
+                for ct in all_custom_tokens:
+                    logger.info(f"  Custom token: base_url='{ct.base_url}', header_name={ct.header_name}, name={ct.name}")
                 
                 custom_token = all_custom_tokens.order_by('base_url').first()  # Empty string sorts first
                 

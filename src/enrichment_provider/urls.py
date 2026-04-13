@@ -2,5 +2,6 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    path('list/', views.get_enrichments, name='get-enrichments'),
+    path('enrichments/', views.get_enrichments, name='get_enrichments'),
+    path('enrichments/types/', views.get_enrichment_types, name='get_enrichment_types'),
 ]
