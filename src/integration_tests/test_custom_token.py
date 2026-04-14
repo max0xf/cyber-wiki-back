@@ -17,10 +17,11 @@ import requests
 
 @pytest.fixture(scope="module", autouse=True)
 def cleanup_custom_tokens(api_session):
-    """Clean up any existing custom tokens before and after tests."""
-    print("\n🧹 Cleaning up custom tokens...")
+    """Track and clean up only test-created custom tokens, preserving existing ones."""
+    print("\n🔍 Recording existing custom tokens to preserve them...")
     
-    # Get all service tokens
+    # Get existing tokens before tests
+    existing_token_ids = set()
     response = requests.get(
         f"{api_session.base_url}/api/service-tokens/v1/tokens/",
         headers=api_session.headers
@@ -28,20 +29,17 @@ def cleanup_custom_tokens(api_session):
     
     if response.status_code == 200:
         tokens = response.json()
-        # Delete all custom_header tokens
         for token in tokens:
             if token.get('service_type') == 'custom_header':
-                token_id = token['id']
-                requests.delete(
-                    f"{api_session.base_url}/api/service-tokens/v1/tokens/{token_id}/",
-                    headers=api_session.headers
-                )
-                print(f"   ✓ Deleted custom token {token_id}")
+                existing_token_ids.add(token['id'])
+                print(f"   ✓ Preserving existing token: {token.get('name')} ({token.get('header_name')})")
+    
+    print(f"   Found {len(existing_token_ids)} existing custom token(s) to preserve")
     
     yield
     
-    # Cleanup after tests
-    print("\n🧹 Final cleanup of custom tokens...")
+    # Cleanup only test-created tokens after tests
+    print("\n🧹 Cleaning up test-created custom tokens (preserving existing ones)...")
     response = requests.get(
         f"{api_session.base_url}/api/service-tokens/v1/tokens/",
         headers=api_session.headers
@@ -52,10 +50,15 @@ def cleanup_custom_tokens(api_session):
         for token in tokens:
             if token.get('service_type') == 'custom_header':
                 token_id = token['id']
-                requests.delete(
-                    f"{api_session.base_url}/api/service-tokens/v1/tokens/{token_id}/",
-                    headers=api_session.headers
-                )
+                # Only delete if this token was created during tests
+                if token_id not in existing_token_ids:
+                    requests.delete(
+                        f"{api_session.base_url}/api/service-tokens/v1/tokens/{token_id}/",
+                        headers=api_session.headers
+                    )
+                    print(f"   ✓ Deleted test token {token_id}")
+                else:
+                    print(f"   ⊙ Preserved existing token {token_id}")
 
 
 class TestCustomToken:
