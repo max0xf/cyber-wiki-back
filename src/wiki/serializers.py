@@ -160,12 +160,13 @@ class SpaceDetailSerializer(serializers.ModelSerializer):
 class FileCommentSerializer(serializers.ModelSerializer):
     """Serializer for FileComment model."""
     author_username = serializers.CharField(source='author.username', read_only=True)
+    parent_id = serializers.PrimaryKeyRelatedField(source='parent_comment', read_only=True)
     replies = serializers.SerializerMethodField()
     
     class Meta:
         model = FileComment
-        fields = ['id', 'source_uri', 'line_start', 'line_end', 'text', 'author', 'author_username', 'thread_id', 'parent_comment', 'is_resolved', 'anchoring_status', 'replies', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'author', 'thread_id', 'created_at', 'updated_at']
+        fields = ['id', 'source_uri', 'line_start', 'line_end', 'text', 'author', 'author_username', 'thread_id', 'parent_comment', 'parent_id', 'is_resolved', 'anchoring_status', 'replies', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'author', 'thread_id', 'parent_id', 'created_at', 'updated_at']
     
     def get_replies(self, obj):
         if obj.replies.exists():
