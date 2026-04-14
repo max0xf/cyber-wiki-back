@@ -319,6 +319,118 @@ class TestCommentEnrichments:
             if comment:
                 delete_test_comment(api_session, comment['id'])
             delete_space(api_session, space['slug'])
+    
+    def test_threaded_comment_enrichments(self, api_session):
+        """
+        Test: Get comment enrichments with nested replies
+        Expected: Returns root comments with replies field containing nested comments
+        """
+        print("\n" + "="*80)
+        print("TEST: Threaded Comment Enrichments")
+        print("="*80)
+        
+        import uuid
+        source_uri = f"git://test/test/project/repo/main/threaded-{uuid.uuid4()}.py"
+        parent_id = None
+        reply1_id = None
+        reply2_id = None
+        
+        try:
+            # Create parent comment
+            print("\n📋 Step 1: Create parent comment")
+            parent_response = requests.post(
+                f"{api_session.base_url}/api/wiki/v1/comments/",
+                json={
+                    "source_uri": source_uri,
+                    "line_start": 10,
+                    "line_end": 10,
+                    "text": "Parent comment"
+                },
+                headers=api_session.headers
+            )
+            assert parent_response.status_code == 201
+            parent = parent_response.json()
+            parent_id = parent['id']
+            print(f"✓ Created parent comment: {parent_id}")
+            
+            # Create first reply
+            print("\n📋 Step 2: Create first reply")
+            reply1_response = requests.post(
+                f"{api_session.base_url}/api/wiki/v1/comments/",
+                json={
+                    "source_uri": source_uri,
+                    "text": "First reply",
+                    "parent_comment": parent_id
+                },
+                headers=api_session.headers
+            )
+            assert reply1_response.status_code == 201
+            reply1 = reply1_response.json()
+            reply1_id = reply1['id']
+            print(f"✓ Created first reply: {reply1_id}")
+            
+            # Create second reply
+            print("\n📋 Step 3: Create second reply")
+            reply2_response = requests.post(
+                f"{api_session.base_url}/api/wiki/v1/comments/",
+                json={
+                    "source_uri": source_uri,
+                    "text": "Second reply",
+                    "parent_comment": parent_id
+                },
+                headers=api_session.headers
+            )
+            assert reply2_response.status_code == 201
+            reply2 = reply2_response.json()
+            reply2_id = reply2['id']
+            print(f"✓ Created second reply: {reply2_id}")
+            
+            # Get enrichments
+            print("\n📋 Step 4: Get comment enrichments")
+            response = requests.get(
+                f"{api_session.base_url}/api/enrichments/v1/enrichments/",
+                params={"source_uri": source_uri, "type": "comments"},
+                headers=api_session.headers
+            )
+            assert response.status_code == 200
+            data = response.json()
+            
+            # Verify structure
+            print("\n📋 Step 5: Verify nested structure")
+            assert 'comments' in data
+            comments = data['comments']
+            assert len(comments) == 1, f"Should have 1 root comment, got {len(comments)}"
+            
+            root_comment = comments[0]
+            assert root_comment['id'] == parent_id, "Root comment ID mismatch"
+            assert 'replies' in root_comment, "Root comment should have replies field"
+            assert len(root_comment['replies']) == 2, f"Should have 2 replies, got {len(root_comment['replies'])}"
+            
+            # Verify replies
+            reply_ids = {r['id'] for r in root_comment['replies']}
+            assert reply1_id in reply_ids, "Reply1 should be in replies"
+            assert reply2_id in reply_ids, "Reply2 should be in replies"
+            
+            # Verify parent_id in replies
+            for reply in root_comment['replies']:
+                assert reply['parent_id'] == parent_id, f"Reply parent_id should be {parent_id}"
+                assert 'replies' in reply, "Reply should have replies field (even if empty)"
+            
+            print(f"✓ Nested structure verified:")
+            print(f"  - Root comment: {parent_id}")
+            print(f"  - Replies: {[r['id'] for r in root_comment['replies']]}")
+            
+            print("\n✅ TEST PASSED: Threaded comment enrichments work correctly")
+            
+        finally:
+            # Cleanup
+            print("\n🧹 Cleanup")
+            for comment_id in [reply2_id, reply1_id, parent_id]:
+                if comment_id:
+                    requests.delete(
+                        f"{api_session.base_url}/api/wiki/v1/comments/{comment_id}/",
+                        headers=api_session.headers
+                    )
 
 
 class TestDiffEnrichments:

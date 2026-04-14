@@ -14,37 +14,48 @@ class CommentEnrichmentProvider(BaseEnrichmentProvider):
     def get_enrichments(self, source_uri: str, user) -> List[Dict[str, Any]]:
         """
         Get comments for a source URI.
+        Returns root comments with nested replies structure.
         
         Args:
             source_uri: Universal source address
             user: Django User instance
         
         Returns:
-            List of comment enrichments
+            List of root comment enrichments with nested replies
         """
-        # Get comments for this source URI
-        comments = FileComment.objects.filter(
-            source_uri=source_uri
-        ).select_related('author').order_by('line_start', 'created_at')
+        # Get only root comments (no parent) for this source URI
+        root_comments = FileComment.objects.filter(
+            source_uri=source_uri,
+            parent_comment=None
+        ).select_related('author').prefetch_related('replies').order_by('line_start', 'created_at')
         
-        enrichments = []
-        for comment in comments:
-            enrichments.append({
+        def serialize_comment(comment):
+            """Recursively serialize comment with replies."""
+            data = {
                 'type': 'comment',
-                'id': comment.id,
+                'id': str(comment.id),
                 'source_uri': comment.source_uri,
                 'line_start': comment.line_start,
                 'line_end': comment.line_end,
                 'text': comment.text,
                 'author': comment.author.username,
                 'thread_id': str(comment.thread_id),
+                'parent_id': str(comment.parent_comment.id) if comment.parent_comment else None,
                 'is_resolved': comment.is_resolved,
                 'anchoring_status': comment.anchoring_status,
                 'created_at': comment.created_at.isoformat(),
                 'updated_at': comment.updated_at.isoformat(),
-            })
+            }
+            
+            # Recursively add replies
+            if comment.replies.exists():
+                data['replies'] = [serialize_comment(reply) for reply in comment.replies.all()]
+            else:
+                data['replies'] = []
+            
+            return data
         
-        return enrichments
+        return [serialize_comment(comment) for comment in root_comments]
     
     def get_enrichment_type(self) -> str:
         return 'comments'
