@@ -5,7 +5,8 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from drf_spectacular.utils import extend_schema, OpenApiParameter
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+from drf_spectacular.types import OpenApiTypes
 from service_tokens.models import ServiceToken
 from .factory import GitProviderFactory
 from .serializers import (
@@ -13,6 +14,7 @@ from .serializers import (
     FileContentSerializer, TreeEntrySerializer, PullRequestSerializer,
     CommitSerializer
 )
+from users.decorators import cached_api_response
 import base64
 import logging
 
@@ -167,6 +169,10 @@ class GitProviderViewSet(viewsets.ViewSet):
         responses={200: FileContentSerializer},
         tags=['git-provider'],
     )
+    @cached_api_response(
+        provider_type_param='provider',
+        endpoint_func=lambda view, **kwargs: '/file'
+    )
     @action(detail=False, methods=['get'], url_path='file')
     def get_file(self, request):
         """Get file content."""
@@ -245,6 +251,10 @@ class GitProviderViewSet(viewsets.ViewSet):
         ],
         responses={200: TreeEntrySerializer(many=True)},
         tags=['git-provider'],
+    )
+    @cached_api_response(
+        provider_type_param='provider',
+        endpoint_func=lambda view, **kwargs: '/tree'
     )
     @action(detail=False, methods=['get'], url_path='tree')
     def get_tree(self, request):

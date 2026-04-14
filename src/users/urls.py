@@ -29,6 +29,16 @@ urlpatterns = [
         'put': 'replace_settings'
     }), name='user-settings'),
     
+    # Cache settings
+    path('settings/cache/', views.UserSettingsViewSet.as_view({
+        'get': 'get_cache_settings',
+        'put': 'update_cache_settings',
+        'delete': 'clear_cache'
+    }), name='cache-settings'),
+    path('settings/cache/stats/', views.UserSettingsViewSet.as_view({
+        'get': 'get_cache_stats'
+    }), name='cache-stats'),
+    
     # Repository-specific settings
     path('repository-settings', views.RepositorySettingsViewSet.as_view({'get': 'list'}), name='repository-settings-list'),
     path('repository-settings/<str:pk>', views.RepositorySettingsViewSet.as_view({
