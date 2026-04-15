@@ -110,9 +110,60 @@ This script will:
 
 ## Testing
 
+### Unit Tests
+
+Run unit tests with coverage:
+
 ```bash
-pytest
+# From repo root
+./scripts/run-unit-tests.sh
+
+# Or from backend directory
+./scripts/run-unit-tests.sh
+
+# With coverage report
+pytest src/unit_tests/ --cov=src --cov-report=term-missing --cov-report=html
 ```
+
+**Current Coverage:** 21% (35 tests passing)
+
+See [COVERAGE.md](./COVERAGE.md) for detailed coverage report.
+
+### Integration Tests
+
+Run integration tests:
+
+```bash
+# From repo root
+./scripts/run-integration-tests.sh
+
+# Or from backend directory
+./scripts/run-integration-tests.sh
+```
+
+**Note:** Integration tests require API token. See integration test documentation.
+
+### All Tests
+
+Run both unit and integration tests:
+
+```bash
+./scripts/run-backend-tests.sh
+```
+
+### Pre-commit Hook
+
+Run pre-commit checks (unit tests + coverage):
+
+```bash
+./scripts/pre-commit-backend-tests.sh
+```
+
+This will:
+- ✅ Run all unit tests
+- ✅ Generate coverage report
+- ✅ Fail if coverage drops below 20%
+- ✅ Create HTML coverage report in `htmlcov/`
 
 ## Development
 

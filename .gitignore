@@ -49,4 +49,9 @@ Thumbs.db
 .env
 .env.dev
 .env.local
+
+# Coverage
 .coverage
+.coverage_baseline
+htmlcov/
+.pytest_cache/
