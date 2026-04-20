@@ -22,15 +22,36 @@ class NameExtractionService:
         Returns:
             Extracted name or None
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Remove code blocks (both ``` and ~~~) to avoid matching headers inside them
+        # This regex removes everything between triple backticks or tildes
+        content_without_code = re.sub(r'```.*?```', '', content, flags=re.DOTALL)
+        content_without_code = re.sub(r'~~~.*?~~~', '', content_without_code, flags=re.DOTALL)
+        
+        # Remove HTML comments to avoid matching headers inside them
+        content_without_code = re.sub(r'<!--.*?-->', '', content_without_code, flags=re.DOTALL)
+        
         if source == 'first_h1':
-            # Find first # Header
-            match = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
-            return match.group(1).strip() if match else None
+            # Find first # Header (not ##, ###, etc.)
+            # Use negative lookahead to ensure it's exactly one #
+            match = re.search(r'^#\s+(?!#)(.+)$', content_without_code, re.MULTILINE)
+            if match:
+                return match.group(1).strip()
+            else:
+                logger.info(f'No H1 header found in markdown content (length: {len(content)})')
+                return None
             
         elif source == 'first_h2':
-            # Find first ## Header
-            match = re.search(r'^##\s+(.+)$', content, re.MULTILINE)
-            return match.group(1).strip() if match else None
+            # Find first ## Header (not ###, ####, etc.)
+            # Use negative lookahead to ensure it's exactly two #
+            match = re.search(r'^##\s+(?!#)(.+)$', content_without_code, re.MULTILINE)
+            if match:
+                return match.group(1).strip()
+            else:
+                logger.info(f'No H2 header found in markdown content (length: {len(content)})')
+                return None
             
         elif source == 'title_frontmatter':
             # Extract from YAML frontmatter

@@ -354,6 +354,7 @@ class FileMappingSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'space', 'space_slug', 'file_path', 'is_folder',
             'is_visible', 'display_name', 'display_name_source',
+            'children_display_name_source',
             'extracted_name', 'extracted_at', 'effective_display_name',
             'sort_order', 'icon', 'apply_to_children', 'parent_rule',
             'is_override', 'created_at', 'updated_at'
@@ -373,7 +374,8 @@ class FileMappingCreateSerializer(serializers.ModelSerializer):
         fields = [
             'file_path', 'is_folder', 'is_visible',
             'display_name', 'display_name_source',
-            'sort_order', 'icon', 'apply_to_children', 'is_override'
+            'sort_order', 'icon', 'apply_to_children', 'is_override',
+            'children_display_name_source'
         ]
     
     def validate_file_path(self, value):
@@ -382,3 +384,111 @@ class FileMappingCreateSerializer(serializers.ModelSerializer):
         if is_folder and not value.endswith('/'):
             return value + '/'
         return value
+    
+    def create(self, validated_data):
+        """Create mapping and extract name if needed."""
+        mapping = super().create(validated_data)
+        self._extract_name_if_needed(mapping)
+        return mapping
+    
+    def update(self, instance, validated_data):
+        """Update mapping and extract name if needed."""
+        mapping = super().update(instance, validated_data)
+        self._extract_name_if_needed(mapping)
+        return mapping
+    
+    def _extract_name_if_needed(self, mapping):
+        """Extract name from file content if display_name_source requires it."""
+        from .services.name_extraction import NameExtractionService
+        from git_provider.factory import GitProviderFactory
+        from service_tokens.models import ServiceToken
+        from django.utils import timezone
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        logger.info(f'[EXTRACT] Starting extraction for {mapping.file_path}, source={mapping.display_name_source}')
+        
+        # Skip if not a file
+        if mapping.is_folder:
+            logger.info(f'[EXTRACT] Skipping {mapping.file_path} - is folder')
+            return
+        
+        # Skip if custom name or filename (no extraction needed)
+        if mapping.display_name_source in ['custom', 'filename', None]:
+            logger.info(f'[EXTRACT] Skipping {mapping.file_path} - source is {mapping.display_name_source}')
+            return
+        
+        # Skip if display_name_source requires extraction but we don't have it set
+        if mapping.display_name_source not in ['first_h1', 'first_h2', 'title_frontmatter']:
+            logger.info(f'[EXTRACT] Skipping {mapping.file_path} - unsupported source {mapping.display_name_source}')
+            return
+        
+        try:
+            # Get git provider
+            space = mapping.space
+            logger.info(f'[EXTRACT] Space: {space.slug}, provider: {space.git_provider}')
+            
+            # Get user from context (passed from view)
+            request = self.context.get('request')
+            if not request:
+                logger.warning(f'[EXTRACT] No request in context for {mapping.file_path}')
+                return
+            
+            logger.info(f'[EXTRACT] User: {request.user.username}')
+            
+            # Find service token for this provider
+            service_token = ServiceToken.objects.filter(
+                user=request.user,
+                service_type=space.git_provider,
+                base_url=space.git_base_url
+            ).first()
+            
+            if not service_token:
+                logger.info(f'[EXTRACT] No token with base_url, trying without')
+                # Fallback: try without base_url filter
+                service_token = ServiceToken.objects.filter(
+                    user=request.user,
+                    service_type=space.git_provider
+                ).first()
+            
+            if not service_token:
+                logger.warning(f'[EXTRACT] No service token found for {space.git_provider}')
+                return
+            
+            logger.info(f'[EXTRACT] Found service token, creating git provider')
+            git_provider = GitProviderFactory.create_from_service_token(service_token)
+            
+            # Get file content
+            logger.info(f'[EXTRACT] Fetching file content: project={space.git_project_key}, repo={space.git_repository_id}, path={mapping.file_path}, branch={space.git_default_branch}')
+            file_data = git_provider.get_file_content(
+                project_key=space.git_project_key or '',
+                repo_slug=space.git_repository_id or space.git_repository_name or '',
+                file_path=mapping.file_path,
+                branch=space.git_default_branch or 'main'
+            )
+            content = file_data.get('content', '')
+            logger.info(f'[EXTRACT] Got content, length={len(content)}')
+            logger.info(f'[EXTRACT] First 500 chars: {repr(content[:500])}')
+            logger.info(f'[EXTRACT] Has H1 pattern: {"# " in content}, Has H2 pattern: {"## " in content}')
+            
+            # Extract name
+            extracted_name = NameExtractionService.extract_name(
+                mapping.file_path,
+                content,
+                mapping.display_name_source
+            )
+            logger.info(f'[EXTRACT] Extracted name: {extracted_name}')
+            
+            # Update if extracted
+            if extracted_name:
+                mapping.extracted_name = extracted_name
+                mapping.extracted_at = timezone.now()
+                mapping.save(update_fields=['extracted_name', 'extracted_at'])
+                logger.info(f'[EXTRACT] ✓ Saved extracted name "{extracted_name}" for {mapping.file_path}')
+            else:
+                filename = mapping.file_path.split('/')[-1]
+                logger.warning(f'[EXTRACT] ✗ No {mapping.display_name_source.upper()} header found in {mapping.file_path}. Will use filename "{filename}" as fallback.')
+                
+        except Exception as e:
+            # Log error but don't fail the save
+            logger.error(f'[EXTRACT] Failed to extract name for {mapping.file_path}: {str(e)}', exc_info=True)

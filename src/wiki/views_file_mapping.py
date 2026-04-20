@@ -93,7 +93,7 @@ class FileMappingViewSet(viewsets.ModelViewSet):
     )
     def create(self, request, space_slug=None):
         space = get_object_or_404(Space, slug=space_slug)
-        serializer = FileMappingCreateSerializer(data=request.data)
+        serializer = FileMappingCreateSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         
         mapping = serializer.save(space=space, created_by=request.user)
@@ -110,7 +110,7 @@ class FileMappingViewSet(viewsets.ModelViewSet):
     )
     def update(self, request, pk=None, space_slug=None):
         mapping = self.get_object()
-        serializer = FileMappingCreateSerializer(mapping, data=request.data)
+        serializer = FileMappingCreateSerializer(mapping, data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
         
