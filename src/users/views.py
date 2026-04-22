@@ -312,6 +312,79 @@ class UserSettingsViewSet(viewsets.ViewSet):
         profile.save()
         
         return Response({'settings': profile.settings})
+    
+    @extend_schema(
+        operation_id='cache_settings_get',
+        summary='Get API cache settings',
+        description='Get API response cache settings (cache_enabled, cache_ttl_minutes).',
+        responses={200: dict},
+        tags=['user_settings'],
+    )
+    @action(detail=False, methods=['get'], url_path='cache')
+    def get_cache_settings(self, request):
+        """Get API cache settings."""
+        from .cache import get_cache
+        cache = get_cache(request.user)
+        return Response(cache.get_settings())
+    
+    @extend_schema(
+        operation_id='cache_settings_update',
+        summary='Update API cache settings',
+        description='Update API response cache settings.',
+        request=dict,
+        responses={200: dict},
+        tags=['user_settings'],
+    )
+    @action(detail=False, methods=['put'], url_path='cache')
+    def update_cache_settings(self, request):
+        """Update API cache settings."""
+        from .cache import get_cache
+        cache = get_cache(request.user)
+        
+        cache_enabled = request.data.get('cache_enabled')
+        cache_ttl_minutes = request.data.get('cache_ttl_minutes')
+        
+        settings = cache.update_settings(
+            cache_enabled=cache_enabled,
+            cache_ttl_minutes=cache_ttl_minutes
+        )
+        
+        return Response(settings)
+    
+    @extend_schema(
+        operation_id='cache_stats_get',
+        summary='Get API cache statistics',
+        description='Get statistics about cached API responses.',
+        responses={200: dict},
+        tags=['user_settings'],
+    )
+    @action(detail=False, methods=['get'], url_path='cache/stats')
+    def get_cache_stats(self, request):
+        """Get cache statistics."""
+        from .cache import get_cache
+        cache = get_cache(request.user)
+        return Response(cache.stats())
+    
+    @extend_schema(
+        operation_id='cache_clear',
+        summary='Clear API cache',
+        description='Clear all or provider-specific cached API responses.',
+        responses={200: dict},
+        tags=['user_settings'],
+    )
+    @action(detail=False, methods=['delete'], url_path='cache')
+    def clear_cache(self, request):
+        """Clear cache entries."""
+        from .cache import get_cache
+        provider_type = request.query_params.get('provider_type')
+        
+        cache = get_cache(request.user)
+        count = cache.clear(provider_type)
+        
+        return Response({
+            'cleared': count,
+            'provider_type': provider_type
+        })
 
 
 class RepositorySettingsViewSet(viewsets.ViewSet):

@@ -13,12 +13,40 @@ class GitHubProvider(BaseGitProvider):
     Documentation: https://docs.github.com/en/rest
     """
     
-    def __init__(self, base_url: str = 'https://api.github.com', token: str = '', username: Optional[str] = None):
-        super().__init__(base_url, token, username)
+    def __init__(self, base_url: str = 'https://api.github.com', token: str = '', username: Optional[str] = None, user=None):
+        super().__init__(base_url, token, username, user)
         self.headers = {
             'Authorization': f'Bearer {token}',
             'Accept': 'application/vnd.github.v3+json',
         }
+    
+    @property
+    def capabilities(self) -> Dict[str, bool]:
+        """
+        Report which features this provider supports.
+        GitHub has full API support.
+        """
+        return {
+            'list_repositories': True,
+            'get_repository': True,
+            'get_file_content': True,
+            'get_directory_tree': True,
+            'list_pull_requests': True,
+            'get_pull_request': True,
+            'get_pull_request_diff': True,
+            'list_commits': True,
+            'create_commit': True,
+            'requires_authentication': True,
+            'supports_webhooks': True,
+            'supports_projects': False,  # GitHub uses orgs, not projects
+            'supports_organizations': True,  # Unique to GitHub
+            'supports_actions': True,  # Unique to GitHub
+        }
+    
+    @property
+    def provider_type(self) -> str:
+        """Return the provider type identifier."""
+        return 'github'
     
     def _request(self, method: str, endpoint: str, **kwargs) -> requests.Response:
         """Make HTTP request to GitHub API."""
@@ -49,8 +77,9 @@ class GitHubProvider(BaseGitProvider):
         response = self._request('GET', f'/repos/{repo_id}')
         return self._normalize_repo(response.json())
     
-    def get_file_content(self, repo_id: str, file_path: str, branch: str = 'main') -> Dict[str, Any]:
+    def get_file_content(self, project_key: str, repo_slug: str, file_path: str, branch: str = 'main') -> Dict[str, Any]:
         """Get file content from repository."""
+        repo_id = f"{project_key}/{repo_slug}"
         response = self._request('GET', f'/repos/{repo_id}/contents/{file_path}', params={'ref': branch})
         data = response.json()
         
@@ -62,8 +91,9 @@ class GitHubProvider(BaseGitProvider):
             'path': data.get('path', file_path),
         }
     
-    def get_directory_tree(self, repo_id: str, path: str = '', branch: str = 'main', recursive: bool = False) -> List[Dict[str, Any]]:
+    def get_directory_tree(self, project_key: str, repo_slug: str, path: str = '', branch: str = 'main', recursive: bool = False) -> List[Dict[str, Any]]:
         """Get directory tree."""
+        repo_id = f"{project_key}/{repo_slug}"
         if recursive:
             # Use Git Trees API for recursive listing
             response = self._request('GET', f'/repos/{repo_id}/git/trees/{branch}', params={'recursive': '1'})

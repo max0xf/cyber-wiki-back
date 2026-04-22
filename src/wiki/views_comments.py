@@ -19,10 +19,16 @@ class FileCommentViewSet(viewsets.ModelViewSet):
     serializer_class = FileCommentSerializer
     
     def get_queryset(self):
-        source_uri = self.request.query_params.get('source_uri')
-        if source_uri:
-            return FileComment.objects.filter(source_uri=source_uri, parent_comment=None).select_related('author').prefetch_related('replies')
-        return FileComment.objects.filter(parent_comment=None).select_related('author').prefetch_related('replies')
+        # For list action, only return root comments (replies are nested)
+        # For detail actions (retrieve, update, delete), allow access to all comments
+        if self.action == 'list':
+            source_uri = self.request.query_params.get('source_uri')
+            if source_uri:
+                return FileComment.objects.filter(source_uri=source_uri, parent_comment=None).select_related('author').prefetch_related('replies')
+            return FileComment.objects.filter(parent_comment=None).select_related('author').prefetch_related('replies')
+        else:
+            # For detail operations, allow access to all comments (including replies)
+            return FileComment.objects.all().select_related('author').prefetch_related('replies')
     
     @extend_schema(
         operation_id='wiki_comments_list',

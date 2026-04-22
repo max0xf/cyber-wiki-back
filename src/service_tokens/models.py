@@ -1,11 +1,17 @@
 """
 Service token models for storing encrypted credentials for various services.
 """
+import uuid
+import logging
 from django.db import models
 from django.contrib.auth.models import User
 from django.conf import settings
+from django.db.models.signals import post_save, post_delete, pre_delete
+from django.dispatch import receiver
 from cryptography.fernet import Fernet
 import base64
+
+logger = logging.getLogger(__name__)
 
 
 class ServiceType(models.TextChoices):
@@ -25,6 +31,7 @@ class ServiceToken(models.Model):
     Stores access tokens and credentials for various services with encryption.
     Supports Git providers (GitHub, Bitbucket), JIRA, and custom header tokens.
     """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='service_tokens')
     service_type = models.CharField(
         max_length=50,
@@ -62,7 +69,20 @@ class ServiceToken(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
-        unique_together = [['user', 'service_type', 'base_url']]
+        # For custom_header tokens, we need header_name in the unique constraint
+        # to allow multiple custom headers per user
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'service_type', 'base_url', 'header_name'],
+                condition=models.Q(service_type='custom_header'),
+                name='unique_custom_header_per_user'
+            ),
+            models.UniqueConstraint(
+                fields=['user', 'service_type', 'base_url'],
+                condition=~models.Q(service_type='custom_header'),
+                name='unique_service_token_per_user'
+            ),
+        ]
         verbose_name = 'Service Token'
         verbose_name_plural = 'Service Tokens'
         ordering = ['-created_at']
@@ -108,3 +128,42 @@ class ServiceToken(models.Model):
     def get_default_zta_header(cls):
         """Get default ZTA header name."""
         return 'X-Zero-Trust-Token'
+
+
+# Signal handlers for tracking ServiceToken operations
+@receiver(post_save, sender=ServiceToken)
+def log_service_token_save(sender, instance, created, **kwargs):
+    """Log when a service token is created or updated."""
+    action = "CREATED" if created else "UPDATED"
+    
+    if instance.service_type == ServiceType.CUSTOM_HEADER:
+        logger.debug(
+            f"[SERVICE_TOKEN] {action} CUSTOM_HEADER token: "
+            f"id={instance.id}, user={instance.user.username}, "
+            f"name={instance.name}, header_name={instance.header_name}, "
+            f"base_url={instance.base_url}"
+        )
+    else:
+        logger.debug(
+            f"[SERVICE_TOKEN] {action}: "
+            f"id={instance.id}, user={instance.user.username}, "
+            f"type={instance.service_type}, base_url={instance.base_url}"
+        )
+
+
+@receiver(pre_delete, sender=ServiceToken)
+def log_service_token_delete(sender, instance, **kwargs):
+    """Log when a service token is about to be deleted."""
+    if instance.service_type == ServiceType.CUSTOM_HEADER:
+        logger.debug(
+            f"[SERVICE_TOKEN] DELETING CUSTOM_HEADER token: "
+            f"id={instance.id}, user={instance.user.username}, "
+            f"name={instance.name}, header_name={instance.header_name}, "
+            f"base_url={instance.base_url}"
+        )
+    else:
+        logger.debug(
+            f"[SERVICE_TOKEN] DELETING: "
+            f"id={instance.id}, user={instance.user.username}, "
+            f"type={instance.service_type}, base_url={instance.base_url}"
+        )
