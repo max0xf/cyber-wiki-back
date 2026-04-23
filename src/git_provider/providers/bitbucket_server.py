@@ -597,6 +597,7 @@ class BitbucketServerProvider(BaseGitProvider):
             'updated_at': str(pr.get('updatedDate', '')),
             'merged': pr.get('state') == 'MERGED',
             'url': links.get('self', [{}])[0].get('href', ''),
+            'from_branch': pr.get('fromRef', {}).get('displayId', ''),
         }
     
     def _normalize_commit(self, commit: Dict[str, Any]) -> Dict[str, Any]:

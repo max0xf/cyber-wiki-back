@@ -72,6 +72,7 @@ def _get_space_enrichments(request, space_slug, start_time):
                             'pr_author': pr['author'],
                             'pr_state': pr['state'],
                             'pr_url': pr['url'],
+                            'from_branch': pr.get('from_branch', ''),
                             'created_at': pr['created_at'],
                             'diff_hunks': hunks,
                         })
@@ -219,6 +220,13 @@ def _get_space_enrichments(request, space_slug, start_time):
                     logger.warning(f"[SpaceEnrichments] Failed to load commit enrichments: {e}")
 
         logger.info(f"[SpaceEnrichments] Loaded {commit_enrichment_count} commit enrichments")
+
+        # When a commit's branch already has an open PR, suppress the duplicate commit enrichment.
+        for fp, fe in file_enrichments.items():
+            if fe.get('pr_diff') and fe.get('commit'):
+                pr_branches = {e.get('from_branch', '') for e in fe['pr_diff'] if e.get('from_branch')}
+                if pr_branches:
+                    fe['commit'] = [e for e in fe['commit'] if e.get('branch_name') not in pr_branches]
 
         total_duration = time.time() - start_time
         logger.info(f"[SpaceEnrichments] Total time: {total_duration:.3f}s, files with enrichments: {len(file_enrichments)}")
@@ -444,6 +452,13 @@ def get_enrichments(request):
         
         logger.info(f"[Enrichments] All enrichments took {all_duration:.3f}s")
         result = enrichments
+
+        # When a commit's branch already has an open PR, show only the PR enrichment.
+        # The commit diff is a subset of the PR diff, so showing both is redundant and confusing.
+        if result.get('pr_diff') and result.get('commit'):
+            pr_branches = {e.get('from_branch', '') for e in result['pr_diff'] if e.get('from_branch')}
+            if pr_branches:
+                result['commit'] = [e for e in result['commit'] if e.get('branch_name') not in pr_branches]
     
     total_duration = time.time() - start_time
     logger.info(f"[Enrichments] Total request time: {total_duration:.3f}s for {source_uri}")
