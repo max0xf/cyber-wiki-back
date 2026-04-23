@@ -104,6 +104,7 @@ class PREnrichmentProvider(BaseEnrichmentProvider):
                             'pr_author': pr['author'],
                             'pr_state': pr['state'],
                             'pr_url': pr['url'],
+                            'from_branch': pr.get('from_branch', ''),
                             'created_at': pr['created_at'],
                             'diff_hunks': hunks,
                         })
