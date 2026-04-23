@@ -48,6 +48,15 @@ def _get_space_enrichments(request, space_slug, start_time):
         provider = GitProviderFactory.create_from_service_token(service_token)
 
         # ── PR diffs ──────────────────────────────────────────────────────────
+        # Always bypass cache for PR data so external changes (deleted/merged PRs)
+        # are reflected immediately without waiting for cache TTL to expire.
+        from users.models import APIResponseCache
+        deleted_pr_cache = APIResponseCache.objects.filter(
+            user=request.user,
+            endpoint__contains='pull-request',
+        ).delete()
+        logger.info(f"[SpaceEnrichments] Cleared {deleted_pr_cache[0]} PR cache entries before fetch")
+
         prs_start = time.time()
         prs_response = provider.list_pull_requests(
             repo_id=repo_id, state='open', page=1, per_page=1000
@@ -118,9 +127,13 @@ def _get_space_enrichments(request, space_slug, start_time):
         # ── Draft edits (UserDraftChange) ─────────────────────────────────────
         draft_changes = UserDraftChange.objects.filter(
             user=request.user, space=space
-        ).select_related('space')
+        ).select_related('space', 'user_branch')
 
         for change in draft_changes:
+            diff_hunks = change.generate_diff_hunks()
+            # Skip stale drafts with no actual content difference
+            if change.change_type == 'modify' and not diff_hunks:
+                continue
             _ensure_file(file_enrichments, change.file_path)
             file_enrichments[change.file_path]['edit'].append({
                 'type': 'edit',
@@ -132,9 +145,11 @@ def _get_space_enrichments(request, space_slug, start_time):
                 'description': change.description or '',
                 'user': request.user.username,
                 'user_full_name': request.user.get_full_name() or request.user.username,
+                'branch_id': str(change.user_branch_id) if change.user_branch_id else None,
+                'task_name': change.user_branch.name if change.user_branch_id else None,
                 'created_at': change.created_at.isoformat(),
                 'updated_at': change.updated_at.isoformat(),
-                'diff_hunks': change.generate_diff_hunks(),
+                'diff_hunks': diff_hunks,
                 'actions': ['commit', 'discard'],
             })
 
@@ -159,26 +174,28 @@ def _get_space_enrichments(request, space_slug, start_time):
 
         logger.info(f"[SpaceEnrichments] Loaded {local_changes.count()} local changes")
 
-        # ── Committed changes (UserBranch, ACTIVE only — PR_OPEN uses PR enrichments) ──
+        # ── Committed changes (all ACTIVE tasks — PR_OPEN uses PR enrichments) ──
         from wiki.models import UserBranch
         from git_provider.worktree_manager import GitWorktreeManager
         import os as _os
 
-        user_branch = UserBranch.objects.filter(
+        user_branches = UserBranch.objects.filter(
             user=request.user,
             space=space,
             status=UserBranch.Status.ACTIVE,
-        ).first()
+        )
 
         commit_enrichment_count = 0
-        if user_branch and user_branch.last_commit_sha:
-            manager = GitWorktreeManager()
-            if space.edit_fork_local_path and _os.path.exists(space.edit_fork_local_path):
-                repo_path = space.edit_fork_local_path
-            else:
-                repo_path = manager.get_bare_repo_path(str(space.id))
+        manager = GitWorktreeManager()
+        if space.edit_fork_local_path and _os.path.exists(space.edit_fork_local_path):
+            repo_path = space.edit_fork_local_path
+        else:
+            repo_path = manager.get_bare_repo_path(str(space.id))
 
-            if _os.path.exists(repo_path):
+        if _os.path.exists(repo_path):
+            for user_branch in user_branches:
+                if not user_branch.last_commit_sha:
+                    continue
                 try:
                     base_ref = manager._resolve_base_ref(repo_path, user_branch.base_branch)
                     changed_files = manager.list_changed_files_sync(
@@ -203,6 +220,7 @@ def _get_space_enrichments(request, space_slug, start_time):
                                 'file_path': fp,
                                 'branch_name': user_branch.branch_name,
                                 'base_branch': user_branch.base_branch,
+                                'task_name': user_branch.name or None,
                                 'commit_sha': user_branch.last_commit_sha,
                                 'user': request.user.username,
                                 'user_full_name': request.user.get_full_name() or request.user.username,
@@ -217,7 +235,7 @@ def _get_space_enrichments(request, space_slug, start_time):
                             })
                             commit_enrichment_count += 1
                 except Exception as e:
-                    logger.warning(f"[SpaceEnrichments] Failed to load commit enrichments: {e}")
+                    logger.warning(f"[SpaceEnrichments] Failed to load commit enrichments for {user_branch.branch_name}: {e}")
 
         logger.info(f"[SpaceEnrichments] Loaded {commit_enrichment_count} commit enrichments")
 

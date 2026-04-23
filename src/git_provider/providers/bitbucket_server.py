@@ -737,7 +737,22 @@ class BitbucketServerProvider(BaseGitProvider):
         repo_slug: str,
         pr_id: int,
     ) -> str:
-        """Get the status of a pull request."""
+        """Get the status of a pull request.
+
+        Returns 'DELETED' when the PR cannot be found (404 or error response
+        from Bitbucket Server, which sometimes returns 200+errors JSON for
+        non-existent PRs instead of a proper 404).
+        """
         endpoint = f"/projects/{project_key}/repos/{repo_slug}/pull-requests/{pr_id}"
-        response = self._request('GET', endpoint)
-        return response.json().get('state', 'OPEN')
+        try:
+            response = self._request('GET', endpoint)
+        except Exception:
+            return 'DELETED'
+        try:
+            data = response.json()
+        except Exception:
+            return 'DELETED'
+        # Bitbucket Server may return 200 + {"errors": [...]} for deleted PRs
+        if data.get('errors') or 'state' not in data:
+            return 'DELETED'
+        return data['state']
