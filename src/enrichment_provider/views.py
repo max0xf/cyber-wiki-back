@@ -1,6 +1,8 @@
+import json
 import logging
 import time
 import traceback
+from django.http import StreamingHttpResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -482,6 +484,78 @@ def get_enrichments(request):
     logger.info(f"[Enrichments] Total request time: {total_duration:.3f}s for {source_uri}")
     
     return Response(result)
+
+
+def stream_enrichments(request):
+    """
+    Streaming NDJSON endpoint for file enrichments with live progress events.
+
+    Returns newline-delimited JSON:
+      {"type": "progress", "message": "..."}   -- emitted for each PR checked
+      {"type": "complete", "data": {...}}       -- final EnrichmentsResponse payload
+
+    Auth: session cookie (same as all other API endpoints).
+    nginx / gunicorn buffering is disabled via X-Accel-Buffering header.
+    """
+    if not request.user.is_authenticated:
+        from django.http import HttpResponse
+        return HttpResponse('Authentication required', status=401)
+
+    source_uri = request.GET.get('source_uri', '').strip()
+    if not source_uri:
+        from django.http import HttpResponse
+        return HttpResponse('source_uri required', status=400)
+
+    def _generate():
+        from .pr_enrichment import PREnrichmentProvider
+        from .comment_enrichment import CommentEnrichmentProvider
+        from .edit_session_enrichment import EditEnrichmentProvider, CommitEnrichmentProvider
+
+        # Fast enrichments first (DB / local git — typically < 0.5s total).
+        yield json.dumps({'type': 'progress', 'message': 'Loading annotations…'}) + '\n'
+        comments, edits, commits = [], [], []
+        try:
+            comments = CommentEnrichmentProvider().get_enrichments(source_uri, request.user)
+        except Exception as e:
+            logger.warning(f"[StreamEnrichments] comments failed: {e}")
+        try:
+            edits = EditEnrichmentProvider().get_enrichments(source_uri, request.user)
+        except Exception as e:
+            logger.warning(f"[StreamEnrichments] edit failed: {e}")
+        try:
+            commits = CommitEnrichmentProvider().get_enrichments(source_uri, request.user)
+        except Exception as e:
+            logger.warning(f"[StreamEnrichments] commit failed: {e}")
+
+        # Slow: stream PR enrichments with per-PR progress events.
+        pr_enrichments = []
+        for event in PREnrichmentProvider().get_enrichments_stream(source_uri, request.user):
+            if event['type'] == 'result':
+                pr_enrichments = event['data']
+            elif event['type'] == 'error':
+                logger.warning(f"[StreamEnrichments] PR stream error: {event.get('message')}")
+            else:
+                yield json.dumps(event) + '\n'
+
+        # Suppress commit enrichment when the branch already has an open PR
+        # (the PR diff is a superset of the commit diff).
+        if pr_enrichments and commits:
+            pr_branches = {e.get('from_branch', '') for e in pr_enrichments if e.get('from_branch')}
+            if pr_branches:
+                commits = [e for e in commits if e.get('branch_name') not in pr_branches]
+
+        result = {
+            'pr_diff': pr_enrichments,
+            'comments': comments,
+            'edit': edits,
+            'commit': commits,
+        }
+        yield json.dumps({'type': 'complete', 'data': result}) + '\n'
+
+    resp = StreamingHttpResponse(_generate(), content_type='application/x-ndjson')
+    resp['X-Accel-Buffering'] = 'no'
+    resp['Cache-Control'] = 'no-cache'
+    return resp
 
 
 @api_view(['GET'])

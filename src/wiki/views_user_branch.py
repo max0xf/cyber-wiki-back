@@ -597,6 +597,89 @@ class UserBranchViewSet(ViewSet):
                 pass
             return Response({'error': e.message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    # ── Rename task ───────────────────────────────────────────────────────────
+
+    @action(detail=False, methods=['post'], url_path='rename-task')
+    def rename_task(self, request):
+        """
+        Rename a task (human-readable name only; branch_name is unchanged).
+
+        Body: { branch_id, name }
+        """
+        branch_id = request.data.get('branch_id')
+        name = (request.data.get('name') or '').strip()
+
+        if not branch_id:
+            return Response({'error': 'branch_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not name:
+            return Response({'error': 'name is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        branch = get_object_or_404(
+            UserBranch, id=branch_id, user=request.user,
+            status__in=[UserBranch.Status.ACTIVE, UserBranch.Status.PR_OPEN],
+        )
+        branch.name = name
+        branch.save(update_fields=['name', 'updated_at'])
+        logger.info(f"[UserBranch] Renamed task {branch.branch_name} → '{name}'")
+        return Response(_serialize_task(branch))
+
+    # ── Delete PR ─────────────────────────────────────────────────────────────
+
+    @action(detail=False, methods=['post'], url_path='delete-pr')
+    def delete_pr(self, request):
+        """
+        Decline/delete the open PR and clear pr_id/pr_url from the task.
+        The branch and its commits are preserved.
+
+        Body: { space_id, branch_id? }
+        """
+        space_id = request.data.get('space_id')
+        if not space_id:
+            return Response({'error': 'space_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        space = get_object_or_404(Space, id=space_id)
+        branch = _get_branch_for_action(request, space)
+        if not branch:
+            return Response({'error': 'No active branch found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not branch.pr_id:
+            return Response({'error': 'No PR found for this task'}, status=status.HTTP_400_BAD_REQUEST)
+
+        pr_id = branch.pr_id
+
+        # Best-effort: decline the PR via the git provider
+        try:
+            service_token = ServiceToken.objects.filter(
+                user=request.user, service_type=space.git_provider
+            ).first()
+            if service_token:
+                provider = GitProviderFactory.create_from_service_token(service_token)
+                provider.decline_pull_request(
+                    project_key=space.git_project_key,
+                    repo_slug=space.git_repository_id,
+                    pr_id=int(pr_id),
+                )
+                logger.info(f"[UserBranch] Declined PR #{pr_id} via provider")
+            else:
+                logger.warning(f"[UserBranch] No service token — skipping provider PR decline")
+        except Exception as e:
+            logger.warning(f"[UserBranch] Failed to decline PR #{pr_id} via provider: {e}")
+
+        branch.pr_id = None
+        branch.pr_url = None
+        branch.status = UserBranch.Status.ACTIVE
+        branch.save(update_fields=['pr_id', 'pr_url', 'status', 'updated_at'])
+
+        try:
+            APIResponseCache.objects.filter(
+                user=request.user, endpoint__contains='/pull-requests',
+            ).delete()
+        except Exception as e:
+            logger.warning(f"[UserBranch] Failed to clear PR cache after delete: {e}")
+
+        logger.info(f"[UserBranch] Deleted PR #{pr_id} for task '{branch.name}'")
+        return Response({'deleted': True, 'branch_name': branch.branch_name})
+
     # ── Legacy status (kept for backward compat) ──────────────────────────────
 
     @action(detail=False, methods=['get'])

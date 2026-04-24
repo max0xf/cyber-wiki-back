@@ -731,6 +731,25 @@ class BitbucketServerProvider(BaseGitProvider):
             'state': data.get('state'),
         }
     
+    def decline_pull_request(
+        self,
+        project_key: str,
+        repo_slug: str,
+        pr_id: int,
+    ) -> None:
+        """Decline (close) an open pull request on Bitbucket Server.
+
+        Bitbucket Server requires the current PR version in the decline request
+        to guard against concurrent updates, so we fetch the PR first.
+        """
+        pr_endpoint = f"/projects/{project_key}/repos/{repo_slug}/pull-requests/{pr_id}"
+        pr_response = self._request('GET', pr_endpoint)
+        pr_data = pr_response.json()
+        version = pr_data.get('version', 0)
+
+        decline_endpoint = f"{pr_endpoint}/decline"
+        self._request('POST', decline_endpoint, json={'version': version})
+
     def get_pull_request_status(
         self,
         project_key: str,
